@@ -1,0 +1,254 @@
+#!/usr/bin/python3
+
+import sys, os
+
+# simple file parser/preparer
+
+DEFAULTS = dict(
+    # for more info look into src/chkvalid.py
+
+    USE_IMPORT=True,  # simple imports in pscript (like includes)
+    USE_SET=True,  # set() supported
+    USE_ROUND2=True,  # round with 2 parameters, e.g. round(1.333, 2)
+    USE_ITER1=True,  # e.g. for kv in d.items()
+    USE_YIELD=True,  # simple generators
+    USE_PROPERTY=True,  # some properties. e.g. @staticmethod
+    USE_STRFORMAT1=True,  # some strformmatting given error in pso
+    USE_EXCEPT_DEFAULT=True,  # allow default except clause
+    USE_HAS___NAME__=True,  # has __name__ set
+    # e.g. a[2:4] = [22,33], used in fannkuch benchmark
+    USE_LEFT_HAND_SLICE=True,
+    USE_PYSTONE=True,  # can use the pystone benchmark
+    USE_RICHARDS=True,  # can use richards benchmark
+)
+
+CONFIGS = {
+    'p3': dict(   # python3 (reference)
+        IS_PY=True,  # force testing python3
+    ),
+
+    'ps': dict(   # develop pscript
+        IS_PS=True,  # force testing pscript
+        USE_HAS___NAME__=False,
+        USE_LEFT_HAND_SLICE=False,  # not working yet, therefore no fannkuch benchmark
+    ),
+
+    'pso': dict(  # original flexx/pscript
+        IS_PS=True,  # force testing pscript
+        USE_IMPORT=False,
+        USE_SET=False,
+        USE_ROUND2=False,
+        USE_ITER1=False,
+        USE_YIELD=False,
+        USE_PROPERTY=False,
+        USE_STRFORMAT1=False,
+        USE_EXCEPT_DEFAULT=False,
+        USE_HAS___NAME__=False,
+        USE_LEFT_HAND_SLICE=False,
+        USE_RICHARDS=False,
+    ),
+
+    'tc': dict(   # Transcrypt
+        IS_TC=True,  # force testing Transcrypt
+        USE_PYSTONE=False,  # errors ?
+        USE_RICHARDS=False,  # errors ?
+    ),
+
+}
+
+
+def usage():
+    print("usage: ", sys.argv[0], "[-h -v] [-Ddef]* %s source target" %
+          ('|'.join(CONFIGS.keys())))
+    print("\t-h: this help")
+    print("\t-v: verbose")
+    print("\t-Ddef: add a define")
+    exit(1)
+
+
+class Source:
+    def __init__(self, fn):
+        self.fn = fn
+        self.lc = 0
+
+
+class Prepare:
+    # FUNCTIONS = {'include', 'define', 'undef', 'if', 'else', 'endif'}
+    FUNCTIONS = {'include', 'if', 'else', 'endif'}
+
+    def __init__(self, conf, source, **kwargs):
+        self.conf = conf
+        self.locals = dict(DEFAULTS)
+        self.locals.update(dict(CONFIGS[conf]))
+        self.verbose = kwargs.get('verbose', 0)
+        defined = kwargs.get('defined')
+        if defined:
+            self.locals.update(defined)
+
+    def error(self, what):
+        print('ERROR:' + str(what))
+
+    def _parse_file(self, result, f):
+        for l in f.readlines():
+            ll = l.rstrip()
+            l = ll.lstrip()
+            if len(l) > 2:
+                if l[0] == '#' and l[-1] == '#':
+                    a = l[1:-1].strip().split(None, 1)
+                    if self.verbose > 1:
+                        print('##:' + str(a))
+                    func = a[0]
+                    if func in self.FUNCTIONS:
+                        try:
+                            param = a[1].strip()
+                        except IndexError:
+                            param = None
+                        getattr(self, 'func_' + func)(result, param)
+                        continue
+            if self.if_stack[-1]:
+                result.append(ll)
+
+    def func_include(self, result, fn):
+        if not self.if_stack[-1]:
+            return
+        if fn[0] != '/':
+            self.sources.append(Source(fn))
+            fn = self.basepath + '/' + fn
+            with open(fn) as f:
+                self._parse_file(result, f)
+            del self.sources[-1]
+
+    def func_if(self, result, condition):
+        # for simple 'if' expressions: #if foo#
+        # or 'if not' expressions: #if not foo#
+        # the 'not' will negate the result of foo.
+        # the foo expression will be evaluted by eval()
+        x = self.if_stack[-1]
+        if x:
+            negate = False
+            try:
+                a = condition.split(None, 1)
+                if len(a) == 2 and a[0] == 'not':
+                    negate = True
+                    condition = a[1]
+                x = eval('True and ' + condition, self.locals, self.locals)
+                if negate:
+                    x = not x
+            except NameError:
+                # not defined
+                x = negate
+        if self.verbose:
+            print('#if %s: %s' % (x, condition))
+        self.if_stack.append(x)
+
+    def func_else(self, *args):
+        if len(self.if_stack) < 2:
+            self.error('wrong else')
+        if self.verbose:
+            print('#else %s' % (not self.if_stack[-1]))
+        if self.if_stack[-2]:
+            self.if_stack[-1] = not self.if_stack[-1]
+
+    def func_endif(self, *args):
+        if len(self.if_stack) < 2:
+            self.error('wrong endif')
+        if self.verbose:
+            print('#endif %s' % (self.if_stack[-1]))
+        del self.if_stack[-1]
+
+    def makedirs(self, dir):
+        if not os.path.exists(dir):
+            os.makedirs(dir)
+            if self.verbose:
+                print('directory created:', dir)
+
+    def one_file(self, source, target):
+        self.if_stack = [True]  # modified by #if, #else, #endif
+        self.sources = [Source(source)]
+        self.basepath = os.path.dirname(os.path.realpath(source))
+        result = []
+        with open(self.sources[0].fn) as f:
+            self._parse_file(result, f)
+        self.makedirs(os.path.dirname(target))
+        with open(target, 'w') as f:
+            f.write('\n'.join(result))
+
+    def run(self, source, target):
+        self.one_file(source, target)
+        if self.locals.get('USE_IMPORT'):
+            # now prepare the 'plib' import directory
+            src = self.basepath + '/plib'
+            if os.path.exists(src):
+                dest = os.path.dirname(target) + '/plib'
+                self.makedirs(dest)
+                for fn in os.listdir(src):
+                    if fn[-3:] == '.py':
+                        self.one_file(src + '/' + fn, dest + '/' + fn)
+
+
+def main():
+    if len(sys.argv) < 3:
+        return usage()
+    conf = ''
+    source = ''
+    target = ''
+    verbose = 0
+    timeit = False
+    defined = {}
+    ijs = []
+    for v in sys.argv[1:]:
+        if v[0] == '-':
+            if len(v) < 2:
+                return usage()
+            if v[1] == 'D':
+                if len(v) < 3:
+                    return usage()
+                v = v[2:].strip()
+                if v:
+                    a = v.split('=', 1)
+                    if len(a) == 2:
+                        defined[a[0]] = eval(a[1])
+                    else:
+                        defined[v] = True
+                continue
+
+            for v in v[1:]:
+                if v == 'h':
+                    return usage()
+                if v == 'v':
+                    verbose += 1
+                    continue
+                return usage()
+            continue
+        if not conf:
+            conf = v
+        elif not source:
+            source = v
+        elif not target:
+            target = v
+        else:
+            return usage()
+    if not conf:
+        return usage()
+    if not conf in CONFIGS:
+        return usage()
+
+    if not source:
+        return usage()
+
+    if not target or target == source:
+        return usage()
+
+    if verbose:
+        print('prepare:', source, '->', target, flush=True)
+    try:
+        x = Prepare(conf, source, defined=defined, verbose=verbose)
+        x.run(source, target)
+    except Exception as e:
+        print(e)
+        # raise
+        exit(1)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,19 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# transcript cache
+__target__/
+
+# transpiled output
+build/
+
+# own local jobs
+cpx
+
+#
+lconfig
+*.backup
+tmp/
+x.*
+

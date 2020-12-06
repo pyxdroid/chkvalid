@@ -1,0 +1,134 @@
+#!/usr/bin/python3
+
+# Copyright (c) 2020-present, pyxdroid MIT License
+# script for transpiling python code with pscript.
+
+# to use different versions of pscript it is convenient
+# to place a symbolic link to pscript into the working directory (see -Ddir)
+#
+
+import sys, os
+
+
+def usage():
+    print("usage: ", sys.argv[0],
+          "[-Ddir] [-h -n -q -j -t -v] pyfile [jsfile]")
+    print("\t-Ddir: change working directory to dir")
+    print("\t-Sdir: symlink pscript dir to target/pscript")
+    print("\t-h: this help")
+    print("\t-n: no inline_stdlib")
+    print("\t-q: run qjs (QuickJS)")
+    print("\t-j: run node (nodejs)")
+    print("\t-t: timed run (-q -j)")
+    print("\t-v: verbose")
+    exit(1)
+
+
+def main():
+    if len(sys.argv) < 2:
+        return usage()
+    inline_stdlib = True
+    dir = ''
+    lnk = ''
+    source = ''
+    target = ''
+    verbose = 0
+    timeit = False
+    ijs = []
+    for v in sys.argv[1:]:
+        if v[0] == '-':
+            if len(v) < 2:
+                return usage()
+            if v[1] == 'D':
+                if len(v) > 2:
+                    dir = v[2:]
+                continue
+            if v[1] == 'S':
+                if len(v) > 2:
+                    lnk = v[2:]
+                continue
+            for v in v[1:]:
+                if v == 'h':
+                    return usage()
+                if v == 'n':
+                    inline_stdlib = False
+                    continue
+                if v == 'q':
+                    ijs.append('qjs')
+                    continue
+                if v == 'j':
+                    ijs.append('node')
+                    continue
+                if v == 't':
+                    timeit = True
+                    continue
+                if v == 'v':
+                    verbose += 1
+                    continue
+                return usage()
+            continue
+        if not source:
+            source = v
+        elif not target:
+            target = v
+        else:
+            return usage()
+    if not source:
+        return usage()
+    if not target:
+        if source[-3:] == '.py':
+            target = source[:-2] + 'js'
+        else:
+            target = source + '.js'
+    currdir = os.getcwd()
+    targetdir = os.path.realpath(dir) if dir else currdir
+
+    def to_curr_dir():
+        os.chdir(currdir)
+
+    if verbose:
+        print('transpile:', source, '->', target, flush=True)
+    try:
+        if lnk:
+            lnk = os.path.realpath(lnk)
+            dstlnk = targetdir + '/pscript'
+            if not os.path.exists(lnk):
+                if verbose:
+                    print('transpile: lnk %s do not exist' % (lnk), flush=True)
+                lnk = ''
+            elif not os.path.exists(dstlnk):
+                if verbose:
+                    print('transpile: will symlink %s -> %s' %
+                          (lnk, dstlnk), flush=True)
+                os.symlink(lnk, dstlnk)
+        if dir:
+            # change the working directory and correct the path for
+            # importing pscript
+            if verbose:
+                print('transpile: will chdir to:', dir, flush=True)
+            sys.path.insert(0, os.path.realpath(dir))
+            os.chdir(dir)
+
+        # this import must be placed here and not at the beginning of file
+        from pscript import script2js, JSError
+        try:
+            script2js(source, target=target, inline_stdlib=inline_stdlib)
+        except JSError as e:
+            print(e)
+            to_curr_dir()
+            exit(1)
+
+        if ijs:
+            timeit = 'time ' if timeit else ''
+            for cmd in ijs:
+                if verbose:
+                    print('==> run with js interpreter:', cmd)
+                if os.system('%s%s %s' % (timeit, cmd, target)):
+                    to_curr_dir()
+                    exit(1)
+    finally:
+        to_curr_dir()
+
+
+if __name__ == '__main__':
+    main()
