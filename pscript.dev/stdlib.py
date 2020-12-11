@@ -577,6 +577,12 @@ FUNCTIONS['op_mult'] = """function (a, b) { // nargs: 2
     } return a * b;
 }"""
 
+# for left-side slices
+FUNCTIONS['op_subscript_assign'] = """function (a, b, c, d) { // nargs: 4
+    a.splice(b, (c!== null)?c-b:a.length, ...d);
+}"""
+
+
 
 ## ----- Methods
 

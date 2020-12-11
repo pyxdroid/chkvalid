@@ -190,6 +190,7 @@ import re
 from . import commonast as ast
 from . import stdlib, imports
 from .parser0 import Parser0, JSError, unify, reprs  # noqa
+from .parser0 import MantleCode
 
 
 # Define builtin stuff for which we know that it returns a bool or int
@@ -800,11 +801,21 @@ class Parser1(Parser0):
         #print('assign:', node)
         class_var = None
         add_vars = [] # for deferred added vars
-        tuple = []
+        tuples = []
+
+        targets = [] #
         for target in node.target_nodes:
+            # multiple targets represents the same value to each.
+            if isinstance(target, ast.Subscript):
+                # left-side slide
+                targets.append(self.parse_Subscript(target))
+                continue
+
+            code = []
             var = ''.join(self.parse(target))
             if isinstance(target, ast.Name):
                 if '.' in var:
+                    # bound name e.g. instance attribute
                     code.append(var)
                 else:
                     _name = self.with_prefix(var)
@@ -818,43 +829,69 @@ class Parser1(Parser0):
             elif isinstance(target, ast.Attribute):
                 code.append(var)
 
-            elif isinstance(target, ast.Subscript):
-                if self._verbose == 'd':
-                  print('assign, subscript:', var)
-                # XXX TODO !!!!!!!!!!!!
-                #if var.find('.slice(') > 0:
-                #   raise JSError("Unsupported assignment slice")
-                code.append(var)
+            #elif isinstance(target, ast.Subscript):
+            #    if self._verbose == 'd':
+            #      print('assign, subscript:', var)
+            #    # XXX TODO !!!!!!!!!!!!
+            #    #if var.find('.slice(') > 0:
+            #    #   raise JSError("Unsupported assignment slice")
+            #    code.append(var)
 
             elif isinstance(target, (ast.Tuple, ast.List)):
-                if self._verbose == 'd':
+                if self._verbose in 'x':
                   print('assign, tuple,list:', var)
                 dummy = self.dummy()
                 code.append(dummy)
-                tuple = target.element_nodes
+                tuples.append(target.element_nodes)
             else:
                 raise JSError("Unsupported assignment type")
-            code.append(' = ')
+            ##code.append(' = ')
+            targets.append(code)
+
 
         # Parse right side
-        if isinstance(node.value_node, ast.ListComp) and len(node.target_nodes) == 1:
-            result_name = self.dummy()
-            code.append(result_name + ';')
-            lc_code = self.parse_ListComp_funtionless(node.value_node, result_name)
-            code = [self.lf(), result_name + ' = [];'] + lc_code + code
+        #if isinstance(node.value_node, ast.ListComp) and len(node.target_nodes) == 1:
+        #        raise JSError("check code")
 
-        else:
-            code += self.parse(node.value_node)
-            code.append(';')
+        right  = self.parse(node.value_node)
 
+        code = [self.lf()]
+        for target in targets:
+           s_right = ''.join(right)
+           if isinstance(target, MantleCode):
+              code.append(''.join(target.assign(s_right)))
+           else:
+              code.append(''.join(target))
+              code.append(' = ')
+              code.append(s_right)
+           code.append(';')
+
+        # Parse right side
+        #code += [self.lf()]
+        #if isinstance(node.value_node, ast.ListComp) and len(node.target_nodes) == 1:
+        #    # e.g. x = [i * 2 for i in foo if i > 0]
+        #    result_name = self.dummy()
+        #    code.append(result_name + ';')
+        #    lc_code = self.parse_ListComp_funtionless(node.value_node, result_name)
+        #    code = [self.lf(), result_name + ' = [];'] + lc_code + code
+        #
+        #else:
+        #    code += self.parse(node.value_node)
+        #    code.append(';')
+        #
         # Handle tuple unpacking
-        if tuple:
+        for tuple in tuples:
             code.append(self.lf())
             for i, x in enumerate(tuple):
-                var = unify(self.parse(x))
-                if isinstance(x, ast.Name):  # but not when attr or index
-                    self.vars.add(var)
-                code.append('%s = %s[%i];' % (var, dummy, i))
+                s_right = '%s[%i]' % (dummy, i)
+                if isinstance(x, ast.Subscript):
+                   code.append(''.join(self.parse(x).assign(s_right)))
+                   code.append(';')
+                else:
+                   var = unify(self.parse(x))
+                   if isinstance(x, ast.Name):  # but not when attr or index
+                      self.vars.add(var)
+                   code.append('%s = %s;' % (var, s_right))
 
         if class_var:
             # this var must be bound to class as property too
@@ -891,12 +928,13 @@ class Parser1(Parser0):
     def parse_Delete(self, node):
         code = []
         for target in node.target_nodes:
+            code_target = self.parse(target)
             code.append(self.lf('delete '))
-            code += self.parse(target)
+            code += code_target
             code.append(';')
-            code += self.parse(target)
+            code += code_target
             code.append('=undefined;delete ')
-            code += self.parse(target)
+            code += code_target
             code.append(';')
         return code
 
@@ -904,45 +942,69 @@ class Parser1(Parser0):
         return []
 
     ## Subscripting
+    class MantleSubscript(MantleCode):
+        def assign(self, *args):
+            code = []
+            code.append(self.parser._use_std_function('op_subscript_assign')+'(')
+            code += self.value_list
+            code += ','
+            code += self.slice_list
+            #print('slice_list:', self.slice_list)
+            if self.slice_list.upper is None:
+               code += ',null'
+            code += ','
+            code.append(','.join(args))
+            code.append(')')
+            return code
 
     def parse_Subscript(self, node):
+        # if assign_node is True, then we have a left-side slice
 
         value_list = self.parse(node.value_node)
         slice_list = self.parse(node.slice_node)
 
         code = []
-        code += value_list
-
         if isinstance(node.slice_node, ast.Index):
+            code += value_list
             code.append('[')
             if slice_list[0].startswith('-'):
                 code.append(unify(value_list) + '.length ')
             code += slice_list
             code.append(']')
         else:  # ast.Slice
-            code.append('.slice(')
-            code += slice_list
-            code.append(')')
+            if node.ctx == 'store':
+               return self.MantleSubscript(self, node, value_list=value_list, slice_list=slice_list)
+            else:
+               code += value_list
+               code.append('.slice(')
+               code += slice_list
+               code.append(')')
         return code
 
     def parse_Index(self, node):
         return self.parse(node.value_node)
 
+    class MantleSlice(MantleCode):
+        def get_code(self):
+          code = []
+          if self.lower:
+              code += self.lower
+          else:
+              code.append('0')
+          if self.upper:
+              code.append(',')
+              code += self.upper
+          return code
+
     def parse_Slice(self, node):
-        code = []
-        if self._verbose == 'd':
+        if self._verbose in 'x':
             print('slice node:', node)
         if node.step_node:
             #print('node:', node)
             raise JSError('Slicing with step not supported.')
-        if node.lower_node:
-            code += self.parse(node.lower_node)
-        else:
-            code.append('0')
-        if node.upper_node:
-            code.append(',')
-            code += self.parse(node.upper_node)
-        return code
+        lower = self.parse(node.lower_node) if node.lower_node else None
+        upper = self.parse(node.upper_node) if node.upper_node else None
+        return self.MantleSlice(self, node, lower=lower, upper=upper)
 
     def parse_ExtSlice(self, node):
         raise JSError('Multidimensional slicing not supported in JS')

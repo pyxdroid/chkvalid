@@ -35,7 +35,10 @@ def unify(x):
     """
     # Note that r'[\.\w]' matches anyting in 'ab_01.äé'
 
-    if isinstance(x, (tuple, list)):
+    if isinstance(x, MantleCode):
+        x = x.get_code_as_str()
+
+    elif isinstance(x, (tuple, list)):
         x = ''.join(x)
 
     if x[0] in '\'"' and x[0] == x[-1] and x.count(x[0]) == 2:
@@ -147,17 +150,42 @@ class NameSpace(dict):
         else:
             self._already_declared.add(name)
 
-class Mantle(list):
+class MantleCode(list):
     # mantle parsed code
-    def __init__(self, code, type=None, **kwargs):
-        list.__init__(self, code)
-        self._type = type
+    def __init__(self, parser, node, code=None, **kwargs):
+        if code:
+          list.__init__(self, code)
+        self.parser = parser
+        self.node = node
         self._kwargs = kwargs
+        if not code:
+           self += self.get_code()
+
+    def __repr__(self):
+        _sd = str(self._kwargs) if self._kwargs else ''
+        _sl = list.__repr__(self) if len(self) else ''
+        return 'MantleCode: %s %s %s'%(self.get_type(), _sd, _sl)
+
+    def __getattr__(self, n):
+        return self._kwargs[n]
 
     def get_type(self):
-        return self._type  # e.g. 'Num'
+        return self.node.__class__.__name__ if self.node else None
 
-class yyyyMantle(list):
+    def get_code(self):
+        return []
+
+    def get_code_as_str(self):
+        if len(self):
+          # already code
+          return ''.join(self)
+        return ''.join(self.get_code())
+        #return 'CodeMantle: %s %s'%(self.get_type(), self._kwargs)
+
+    def assign(self, *args):
+        return self.get_code_as_str() + " = " + ','.join(args)
+
+class yyyyMantleCode(list):
     # mantle parsed code
     def __init__(self, code, type, **kwargs):
         if isinstance(code, tuple):
@@ -173,7 +201,7 @@ class yyyyMantle(list):
         return ''.join(self._code)
 
     def __add__(self, code):
-        if isinstance(code, Mantle):
+        if isinstance(code, MantleCode):
             code = x._code
 
         if isinstance(code, tuple):
@@ -248,11 +276,11 @@ class Parser0:
     }
 
     def __init__(self, code, pysource=None, indent=0, docstrings=True,
-                 inline_stdlib=True, importmodule=None, insert_ipath=False, verbose=''):
+                 inline_stdlib=True, importmodule=None, insert_ipath=False, verbose=None):
         #print('Parser.__init__, inline_stdlib:', inline_stdlib, 'importmodule:', importmodule, insert_ipath)
         self._pycode = code  # helpfull during debugging
         self._pysource = None
-        self._verbose = verbose
+        self._verbose = verbose or '#' # must be a char here because of in compares
         if isinstance(pysource, str):
             self._pysource = pysource, 0
         elif isinstance(pysource, tuple):
@@ -495,16 +523,21 @@ class Parser0:
     def _handle_std_deps(self, code):
         nargs, function_deps, method_deps = stdlib.get_std_info(code)
         for dep in function_deps:
-            self.use_std_function(dep, [])
+            self._use_std_function(dep)
         for dep in method_deps:
             self.use_std_method('x', dep, [])
 
-    def use_std_function(self, name, arg_nodes):
+    def _use_std_function(self, name):
         """ Use a function from the PScript standard library.
         """
         self._handle_std_deps(stdlib.FUNCTIONS[name])
         self._std_functions.add(name)
-        mangled_name = stdlib.FUNCTION_PREFIX + name
+        return stdlib.FUNCTION_PREFIX + name
+
+    def use_std_function(self, name, arg_nodes):
+        """ Use a function from the PScript standard library.
+        """
+        mangled_name = self._use_std_function(name)
         args = [(a if isinstance(a, str) else unify(self.parse(a)))
                 for a in arg_nodes]
         return '%s(%s)' % (mangled_name, ', '.join(args))
@@ -566,7 +599,7 @@ class Parser0:
             docstring = '\n'.join(lines)
         return docstring
 
-    def parse(self, node):
+    def parse(self, node, **kwargs):
         """ Parse a node. Check node type and dispatch to one of the
         specific parse functions. Raises error if we cannot parse this
         type of node.
@@ -576,15 +609,21 @@ class Parser0:
         nodeType = node.__class__.__name__
         parse_func = getattr(self, 'parse_' + nodeType, None)
         if parse_func:
-            res = parse_func(node)
-            if isinstance(res, Mantle):
-                return res
+            if self._verbose == 'X':
+              print('parse_start:', node.lineno, nodeType, node.ctx, node)
+
+            res = parse_func(node, **kwargs)
+            if self._verbose == 'X':
+              print('parse_end:', node.lineno, nodeType, res)
+
+            if isinstance(res, MantleCode):
+                return res # already mantled
             # Return as list also if a tuple or string was returned
             assert res is not None
             if isinstance(res, tuple):
                 res = list(res)
             if not isinstance(res, list):
                 res = [res]
-            return Mantle(res, nodeType)
+            return MantleCode(self, node, res)
         else:
             raise JSError('Cannot parse %s-nodes yet' % nodeType)

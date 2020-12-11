@@ -30,7 +30,6 @@ CONFIGS = {
     'ps': dict(   # develop pscript
         IS_PS=True,  # force testing pscript
         USE_HAS___NAME__=False,
-        USE_LEFT_HAND_SLICE=False,  # not working yet, therefore no fannkuch benchmark
     ),
 
     'pso': dict(  # original flexx/pscript

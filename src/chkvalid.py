@@ -197,6 +197,14 @@ def basics1(checker):
     ckfalse = checker.expect_false
     ckl = checker.expect_result
 
+    # simple assign
+    a = 1
+
+    # multiple assign
+    b = c = d = 3
+
+    cke(a + b + c + d, 10, 'assign')
+
     # Simple operations
     cke(3 + 4 - 1, 6)
     cke(3 * 7 / 9, 2.3333333333333335, '3*7/9')
@@ -225,11 +233,34 @@ def basics1(checker):
     a = [1, 2, 3, 4]
     a[1] = 12
 
+    b = [11, 22, 33, 44]
+
     # if USE_LEFT_HAND_SLICE#
-    def _f():
+    def _f1():
         a[2:4] = [22, 33]
         return a
-    ckl(_f, [1, 12, 22, 33], 'left-hand slice')
+
+    ckl(_f1, [1, 12, 22, 33], 'left-hand slice')
+
+    def _f2():
+        a[1:2], b[2:4] = [82, 83], [74, 75]
+        return a, b
+
+    ckl(_f2, ([1, 82, 83, 22, 33], [11, 22, 74, 75]), 'left-hand slice tuple')
+
+    def _f3():
+        a[1:2] = b[:2] = [82, 83]
+        return a, b
+    ckl(_f3, ([1, 82, 83, 83, 22, 33], [82, 83, 74, 75]),
+        'left-hand slice multiple assign')
+
+    def _f4():
+        a[1:2], b[2:4] = a[3:4], b[:2] = [82, 83], [74, 75]
+        return a, b
+
+    ckl(_f4, ([1, 82, 83, 82, 83, 83, 22, 33], [74, 75, 74, 75]),
+        'left-hand slice tuple multiple assign')
+
     # endif#
 
     # Slicing strings
@@ -467,12 +498,14 @@ def basics2(checker):
         result += int(key)    # a dict key is always string in JS !!
         result += val
 
+    cke(result, 392, 'iterate over dict 1')
+
     # if USE_ITER1#
     for kv in d.items():
         result += int(kv[0])    # a dict key is always string in JS !!
         result += int(kv[1])
 
-    cke(result, 585, 'iterate over dict')
+    cke(result, 585, 'iterate over dict 2')
     # else#
     print('NO USE_ITER1')
     # endif#
@@ -794,6 +827,35 @@ def classes(checker):
 
     ckl(lambda: B(3, 4).sum(), 10, 'subclass __init__')
 
+# if USE_LEFT_HAND_SLICE#
+
+
+def left_hand_slices(checker):
+    cke = checker.expect_equal
+    a = [1, 2, 'b', 'c']
+    b = []
+
+    a[-1:] = b[:] = [11, 22]
+    cke((a, b), ([1, 2, 'b', 11, 22], [11, 22]), 'left_hand_slices1')
+
+    a[:] = b[:] = []
+    cke((a, b), ([], []), 'left_hand_slices2')
+
+    a[:], b[:] = [1, 2, 'b', 'c'], [11, 22, 33]
+    cke((a, b), ([1, 2, 'b', 'c'], [11, 22, 33]), 'left_hand_slices3')
+
+    a[1:2], b[2:4] = a[3:4], b[:2] = ['h', 'u'], ['l', 'a']
+    cke((a, b), ([1, 'h', 'u', 'h', 'u', 'c'], [
+        'l', 'a', 'l', 'a']), 'left_hand_slices4')
+
+    c = [11, 22, 33, 44, 55]
+    d = ['aa', 'bb', 'cc', 'dd', 'ee']
+    a[1:2], b[2:4] = c[3:4], d[:2] = ['h', 'u'], ['l', 'a']
+    cke((a, b, c, d), ([1, 'h', 'u', 'u', 'h', 'u', 'c'], ['l', 'a', 'l', 'a'], [
+        11, 22, 33, 'h', 'u', 55], ['l', 'a', 'cc', 'dd', 'ee']), 'left_hand_slices5')
+
+# endif#
+
 
 def js_only(checker):
     # will only work with JS (transpiler)
@@ -803,9 +865,11 @@ def js_only(checker):
     ckfalse = checker.expect_false
 
     if IS_TC:
+        # Transcrypt needs __new__ here
         d1 = __new__(Date(2014))
         d2 = __new__(Date(2015))
     else:
+        # pscript do not need it
         d1 = Date(2014)
         d2 = Date(2015)
 
@@ -1009,6 +1073,11 @@ def main(checker):
         checker.call(generators2, "generators2")
         # endif#
         checker.call(classes, "classes")
+
+        # if USE_LEFT_HAND_SLICE#
+        checker.call(left_hand_slices, "more left_hand_slices")
+        # endif#
+
         # if USE_IMPORT#
         checker.call(imports, "imports")
         # endif#
@@ -1047,7 +1116,7 @@ def _main_():
     class Checker:
         def __init__(self):
             self.title = ''
-            self.expected = []
+            self.count_checks = 0
             self.errors = []
             self.warnings = []
             self.infos = []
@@ -1109,7 +1178,27 @@ def _main_():
             self.add_expected(result, expected, comment, failed, '=')
 
         def add_expected(self, result, expected, comment='', failed='', op='='):
-            self.expected.append((result, expected, comment, failed, op))
+            # eval at once
+            self.count_checks += 1
+            if op == 'in':
+                ok = result in expected
+            elif op == '=':
+                ok = result == expected
+            else:
+                raise ValueError('wrong op:' + op)
+            if not ok:
+                strx = str if IS_PY else JSON.stringify
+                ok1 = strx(result) == strx(expected)
+                if ok1:
+                    result = 'probably the compare equal is wrong here'
+                if failed:
+                    # we know the failed, therefore a warning only
+                    self.add_warning('result:' + strx(result) + ', expected:' +
+                                     strx(expected) + ', "' + comment + '", ' + failed)
+                else:
+                    # we do not know the failed, therefore an error here
+                    self.add_error(
+                        'result:' + strx(result) + ', expected:' + strx(expected) + ', "' + comment + '"')
 
         def add_error(self, error):
             #print('add_error:', error)
@@ -1124,31 +1213,11 @@ def _main_():
                 a.append(p)
             self.infos.append(' '.join(a))
 
-        def eval_results(self):
-            print('EVAL ' + str(len(self.expected)) + ' results')
-            for result, expected, comment, failed, op in self.expected:
-                #print('eval_results:', result == expected, result, comment)
-                if op == 'in':
-                    ok = result in expected
-                elif op == '=':
-                    ok = result == expected
-                else:
-                    raise ValueError('wrong op:' + op)
-                if not ok:
-                    if failed:
-                        # we know the failed, therefore a warning only
-                        self.add_warning('result:' + str(result) + ', expected:' +
-                                         str(expected) + ', "' + comment + '", ' + failed)
-                    else:
-                        # we do not know the failed, therefore an error here
-                        self.add_error(
-                            'result:' + str(result) + ', expected:' + str(expected) + ', "' + comment + '"')
-            print('EVAL ' + str(len(self.errors)) + ' errors, ' +
-                  str(len(self.warnings)) + ' warnings')
-
     checker = Checker()
     main(checker)
-    checker.eval_results()
+    print('RESULT:   ' + str(checker.count_checks) + ' checks, ' + str(len(checker.errors)) + ' errors, ' +
+          str(len(checker.warnings)) + ' warnings')
+
     if checker.errors:
         print('ERRORS -- ' + checker.title + ' -- ERRORS -----')
         for error in checker.errors:
@@ -1161,7 +1230,7 @@ def _main_():
 
     if checker.infos:
         print('INFOS-- ' + checker.title + ' -- INFOS-----')
-        for infos in checker.infos:
+        for info in checker.infos:
             print(info)
 
 
