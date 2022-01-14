@@ -9,7 +9,7 @@ Useful links:
 
 Main limiting features for browsers (not sure if this is 100% complete):
 * Object.keys supported from IE 9 - we use it in method_keys()
-
+Modifications by pyxdroid
 """
 
 import re
@@ -164,10 +164,14 @@ class MantleCode(list):
     def __repr__(self):
         _sd = str(self._kwargs) if self._kwargs else ''
         _sl = list.__repr__(self) if len(self) else ''
-        return 'MantleCode: %s %s %s'%(self.get_type(), _sd, _sl)
+        return self.__class__.__name__ + ': %s %s %s'%(self.get_type(), _sd, _sl)
 
     def __getattr__(self, n):
-        return self._kwargs[n]
+        try:
+          return self._kwargs[n]
+        except KeyError:
+          print(self.__class__.__name__,', KeyError:', n, 'type:', self.get_type(), 'node:', self.node, '_kwargs:', self._kwargs, file=sys.stderr)
+          raise
 
     def get_type(self):
         return self.node.__class__.__name__ if self.node else None
@@ -180,38 +184,9 @@ class MantleCode(list):
           # already code
           return ''.join(self)
         return ''.join(self.get_code())
-        #return 'CodeMantle: %s %s'%(self.get_type(), self._kwargs)
 
     def assign(self, *args):
         return self.get_code_as_str() + " = " + ','.join(args)
-
-class yyyyMantleCode(list):
-    # mantle parsed code
-    def __init__(self, code, type, **kwargs):
-        if isinstance(code, tuple):
-            code = list(code)
-        if not isinstance(code, list):
-            code = [code]
-        self._code = code
-        self._type = type
-        self._kwargs = kwargs
-
-    # make it compatible with String
-    def __str__(self):
-        return ''.join(self._code)
-
-    def __add__(self, code):
-        if isinstance(code, MantleCode):
-            code = x._code
-
-        if isinstance(code, tuple):
-            code = list(code)
-
-        if not isinstance(code, list):
-            code = [code]
-        self._code += code
-        return self
-
 
 class Parser0:
     """ The Base parser class. Implements the basic mechanism to allow
@@ -349,7 +324,8 @@ class Parser0:
         # Parse
         try:
             self._parts = self.parse(self._root)
-        except JSError as err:
+        #except JSError as err:
+        except Exception as err:
             # Give smarter error message
             _, _, tb = sys.exc_info()
             try:

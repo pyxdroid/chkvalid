@@ -19,7 +19,7 @@
 # some examples / comments are taken from the original flexx PScript transpiler (docs)
 # https://github.com/flexxui/pscript
 # PScript compiler is:
-# Copyright (c) 2016-2020, Almar Klein
+# Copyright (c) 2016-2021, Almar Klein
 # Distributed under the (new) BSD License.
 #
 #
@@ -79,7 +79,7 @@ def __new__(x): return x
 
 # only one line should be printed here
 if IS_PY:
-    print('Referenz Python')
+    print('Reference Python')
 if IS_PS:
     print('PScript Transpiler')
 if IS_TC:
@@ -101,11 +101,16 @@ if IS_PY:
         def keys(self): return self._d.keys()
         def values(self): return self._d.values()
 
+        def __len__(self):
+            return self._d.__len__()
+
         def __iter__(self):
             return iter(self._d.items())
     #__pragma__ ('noskip')
 #endif #
 # -------------------------------------------------------------------------------------
+
+globalvar1 = 1
 
 
 def truefalsy1(checker):
@@ -156,6 +161,11 @@ def truefalsy2(checker):
     def f(): pass
     cktrue(f, 'function')
     ckfalse(f(), 'function()->None')
+
+    class k:
+        pass
+    cktrue(k, 'class')
+    cktrue(k(), 'instance')
 
     x = 0
     cke(x or 0, 0, "x(0) or 0")
@@ -227,8 +237,29 @@ def basics1(checker):
     # Slicing lists
     foo = [1, 2, 3, 4, 5]
     cke(len(foo), 5)
-    cke(foo[2:], [3, 4, 5], 'slice')
-    cke(foo[2:-2], [3], 'slice')
+    cke(foo[2:], [3, 4, 5], 'slice [2:]')
+    cke(foo[2:-2], [3], 'slice [2:-1]')
+    cke(foo[-2:], [4, 5], 'slice [-2:]')
+    cke(foo[:], [1, 2, 3, 4, 5], 'slice [:]')
+    cke(foo[::], [1, 2, 3, 4, 5], 'slice [::]')
+
+    # if USE_SLICE_STEP#
+    cke(foo[::1], [1, 2, 3, 4, 5], 'slice with step[::1]')
+    cke(foo[::2], [1, 3, 5], 'slice with step[::2]')
+    cke(foo[::3], [1, 4], 'slice with step[::3]')
+    cke(foo[::-1], [5, 4, 3, 2, 1], 'slice with step[::-1]')
+    cke(foo[::-2], [5, 3, 1], 'slice with step[::-2]')
+    cke(foo[::-3], [5, 2], 'slice with step[::-3]')
+
+    cke(foo[4:0:-2], [5, 3], 'slice with step[4:0:-2]')
+
+    cke(foo[5:1:-2], [5, 3], 'slice with step [5:1:-2]')
+    cke(foo[-1:0:-2], [5, 3], 'slice with step [-1:0:-2]')
+    cke(foo[-1:-3:-2], [5], 'slice with step [-1:-3:-2]')
+    cke(foo[-1::-2], [5, 3, 1], 'slice with step [-1::-2]')
+    cke(foo[:-1:-2], [], 'slice with step [:-1:-2]')
+
+    # endif#
 
     a = [1, 2, 3, 4]
     a[1] = 12
@@ -240,26 +271,26 @@ def basics1(checker):
         a[2:4] = [22, 33]
         return a
 
-    ckl(_f1, [1, 12, 22, 33], 'left-hand slice')
+    ckl(_f1, [1, 12, 22, 33], 'splice (_f1)')
 
     def _f2():
         a[1:2], b[2:4] = [82, 83], [74, 75]
         return a, b
 
-    ckl(_f2, ([1, 82, 83, 22, 33], [11, 22, 74, 75]), 'left-hand slice tuple')
+    ckl(_f2, ([1, 82, 83, 22, 33], [11, 22, 74, 75]), 'splice tuple (_f2)')
 
     def _f3():
         a[1:2] = b[:2] = [82, 83]
         return a, b
     ckl(_f3, ([1, 82, 83, 83, 22, 33], [82, 83, 74, 75]),
-        'left-hand slice multiple assign')
+        'splice multiple assign (_f3)')
 
     def _f4():
         a[1:2], b[2:4] = a[3:4], b[:2] = [82, 83], [74, 75]
         return a, b
 
     ckl(_f4, ([1, 82, 83, 82, 83, 83, 22, 33], [74, 75, 74, 75]),
-        'left-hand slice tuple multiple assign')
+        'splice tuple multiple assign (_f4)')
 
     # endif#
 
@@ -268,6 +299,18 @@ def basics1(checker):
     cke(len(bar), 10)
     cke(bar[2:], 'cdefghij')
     cke(bar[2:-2], 'cdefgh')
+
+    # with steps
+    # if USE_SLICE_STEP#
+    cke(bar[::-1], 'jihgfedcba', 'slice str with step [::-1]')
+    cke(bar[::-2], 'jhfdb', 'slice str with step [::-2]')
+    cke(bar[::-3], 'jgda', 'slice str with step [::-3]')
+    cke(bar[::2], 'acegi', 'slice str with step [::2]')
+    cke(bar[-5::2], 'fhj', 'slice str with step [-5::2]')
+    cke(bar[-5::-2], 'fdb', 'slice str with step [-5::-2]')
+    cke(bar[:-2:2], 'aceg', 'slice str with step [:-2:2]')
+    cke(bar[4:0:-2], 'ec', 'slice str with step[4:0:-2]')
+    # endif#
 
     # Subscripting
     foo = {'bar': 3}
@@ -378,6 +421,7 @@ def basics2(checker):
 
     # You can use it on your own types too ...
     x = B()
+    cktrue(x, 'instance of simple class')
     cktrue(isinstance(x, MyClass), 'isinstance MyClass')
     if IS_PS:
         # special in pscript
@@ -560,9 +604,14 @@ def basics2(checker):
         m1 = __new__(Map())
     else:
         m1 = Map()
+
+    ckfalse(m1, 'empty Map')
+
     # print(m1)
     m1.set(1, 4)
     m1.set(2, 6)
+
+    cktrue(m1, 'filled Map')
 
     result = 0
     for x in m1:  # like items() not keys() !!!!
@@ -609,6 +658,15 @@ def basics2(checker):
     y = [i * j for i in [9, 10] for j in bar]
     cke(x + y, [2, 4, 6, 8, 72, 81, 90, 99, 80,
                 90, 100, 110], 'list comprehensions')
+    # --------------------------------------------------------------------------------
+    # some extra checks for not Python
+    if not IS_PY:
+        x = __new__(ArrayBuffer(8))
+        cktrue(x, 'ArrayBuffer(8)')
+        cke(len(x), 8, 'len of ArrayBuffer(8)')  # 8 byte
+        y = __new__(Int32Array(x))
+        cktrue(y, 'Int32Array')  # 4 byte
+        cke(len(y), 2, 'len of Int32Array(ArrayBuffer(8))')
 
 
 def functions1(checker):
@@ -618,7 +676,22 @@ def functions1(checker):
     cktrue = checker.expect_true
     ckfalse = checker.expect_false
 
+    global globalvar1
+    nonlocalvar1 = 11
+
+    globalvar1 += 1
+    cke(globalvar1, 2, 'globals1')
+    globalvar1 -= 1
+    cke(globalvar1, 1, 'globals2')
+
     def f1(*args):
+        nonlocal nonlocalvar1
+
+        nonlocalvar1 -= 1
+        cke(globalvar1, 1, 'globals in f1')
+        cke(nonlocalvar1, 10, 'nonlocal in f1')
+        nonlocalvar1 += 1
+
         x = 0
         for c in args:
             x += c
@@ -832,27 +905,71 @@ def classes(checker):
 
 def left_hand_slices(checker):
     cke = checker.expect_equal
+    ckl = checker.expect_result
+
     a = [1, 2, 'b', 'c']
     b = []
 
     a[-1:] = b[:] = [11, 22]
-    cke((a, b), ([1, 2, 'b', 11, 22], [11, 22]), 'left_hand_slices1')
+    cke((a, b), ([1, 2, 'b', 11, 22], [11, 22]), 'splices1')
 
     a[:] = b[:] = []
-    cke((a, b), ([], []), 'left_hand_slices2')
+    cke((a, b), ([], []), 'splices2')
 
     a[:], b[:] = [1, 2, 'b', 'c'], [11, 22, 33]
-    cke((a, b), ([1, 2, 'b', 'c'], [11, 22, 33]), 'left_hand_slices3')
+    cke((a, b), ([1, 2, 'b', 'c'], [11, 22, 33]), 'splices3')
 
     a[1:2], b[2:4] = a[3:4], b[:2] = ['h', 'u'], ['l', 'a']
     cke((a, b), ([1, 'h', 'u', 'h', 'u', 'c'], [
-        'l', 'a', 'l', 'a']), 'left_hand_slices4')
+        'l', 'a', 'l', 'a']), 'splices4')
 
     c = [11, 22, 33, 44, 55]
     d = ['aa', 'bb', 'cc', 'dd', 'ee']
     a[1:2], b[2:4] = c[3:4], d[:2] = ['h', 'u'], ['l', 'a']
     cke((a, b, c, d), ([1, 'h', 'u', 'u', 'h', 'u', 'c'], ['l', 'a', 'l', 'a'], [
-        11, 22, 33, 'h', 'u', 55], ['l', 'a', 'cc', 'dd', 'ee']), 'left_hand_slices5')
+        11, 22, 33, 'h', 'u', 55], ['l', 'a', 'cc', 'dd', 'ee']), 'splices5')
+
+    # with steps
+    # if USE_SLICE_STEP#
+    a = [1, 2, 3, 4, 5]
+
+    def _f1():
+        a[1::3] = [12, 14]
+        return a
+    ckl(_f1, [1, 12, 3, 4, 14], 'splice with step [1::3]')
+
+    def _f2():
+        a[1::1] = [22, 23]
+        return a
+    ckl(_f2, [1, 22, 23], 'splice with step [1::1]')
+
+    a = [1, 2, 3, 4, 5]
+
+    def _f3():
+        a[5:1:-2] = [52, 53]
+        return a
+    ckl(_f3, [1, 2, 53, 4, 52], 'splice with step [5:1:-2]')
+
+    def _f4():
+        a[::-1] = [55, 54, 53, 52, 51]
+        return a
+    ckl(_f4, [51, 52, 53, 54, 55], 'splice with step [::-1]')
+
+    def _f5():
+        a[::-2] = [65, 64, 63]
+        return a
+    ckl(_f5, [63, 52, 64, 54, 65], 'splice with step [::-2]')
+
+    def _f6():
+        a[:0:-3] = [75, 74]
+        return a
+    ckl(_f6, [63, 74, 64, 54, 75], 'splice with step [:0:-3]')
+
+    def _f10():
+        a[1::5] = [32, 33]
+    checker.expect_exception(_f10, ValueError, 'splice [1::5]')
+
+    # endif#
 
 # endif#
 
@@ -1107,6 +1224,10 @@ def _main_():
 
     # if not USE_EXCEPT_DEFAULT#
     print('NO USE_EXCEPT_DEFAULT')
+    # endif#
+
+    # if not USE_SLICE_STEP#
+    print('NO USE_SLICE_STEP')
     # endif#
 
     # if not USE_LEFT_HAND_SLICE#

@@ -84,6 +84,7 @@ def get_partial_std_lib(func_names, method_names, classes_names, indent=0,
     #print('get_partial_std_lib:',func_names, 'method_names:', method_names, 'classes_names:', classes_names, 'indent:', indent)
     if classes_names:
         classes_names.add('Exception') # always used  TODO better
+
     for name in PYEXCEPTIONS:
         if name in classes_names:
           code = CLASSES[name].strip()
@@ -482,6 +483,7 @@ FUNCTIONS['map'] = """function (func, iter) { // nargs: 2
 FUNCTIONS['len'] = """function (v) { // nargs: 1
     if (v instanceof Set || v instanceof Map) {return v.size;}
     if (v.length !== undefined) {return v.length;}
+    if (v.byteLength !== undefined) {return v.byteLength;}
     return Object.keys(v).length; // e.g. for dict
 }"""
 
@@ -493,7 +495,7 @@ FUNCTIONS['truthy'] = """function (v) { // nargs: 1
     if (v instanceof Set || v instanceof Map) return v.size ? v : false;
     if (v.length !== undefined) return v.length ? v : false;
     if (v.byteLength !== undefined) return v.byteLength ? v : false;
-    return Object.keys(v).length ? v : false;
+    return (Object.keys(v).length === 0 && v.constructor === Object) ? false : v;
 }"""
 
 #     // console.log('a===b', a, b)
@@ -577,11 +579,91 @@ FUNCTIONS['op_mult'] = """function (a, b) { // nargs: 2
     } return a * b;
 }"""
 
-# for left-side slices
+# for step slices
+# const e = Error('NOT SUPPORTED YET:op_step_slice'); e.name='TypeError'; throw e;
+# console.log('CHK:op_step_slice', v, start, end, step)
+FUNCTIONS['op_step_slice'] = """function (v, start, end, step) { // nargs: 4
+   const res = [];
+   if (!step) step=1; // default
+   if (start===null) {
+     start = (step>0) ? 0 : v.length-1;
+   } else {
+     if (start < 0) start += v.length;
+   }
+   if (end===null) {
+     end = (step>0) ? v.length : -1;
+   } else {
+     if (end<0) end += v.length;
+   }
+   if (start < 0) start = 0;
+   if (step > 0) {
+     if (end > v.length) end = v.length;
+     for (let i=start; i < end; i+= step) res.push(v[i]);
+   } else {
+     if (start >= v.length)
+       start = v.length-1;
+     if (end < -1)
+       end = -1;
+     for (let i=start; i > end; i+= step) res.push(v[i]);
+   }
+   if (v.constructor === String)
+     return res.join('');
+   return res;
+}"""
+
+# for left-side slices (splices)
 FUNCTIONS['op_subscript_assign'] = """function (a, b, c, d) { // nargs: 4
     a.splice(b, (c!== null)?c-b:a.length, ...d);
 }"""
 
+# with step
+# console.log('CHK:op_subscript_step_assign', v, start, end, step, a)
+FUNCTIONS['op_subscript_step_assign'] = """function (v, start, end, step, a) { // nargs: 5
+   if (!step) step=1; // default
+   if (start===null) {
+     start = (step>0) ? 0 : v.length-1;
+   } else {
+     if (start < 0) start += v.length;
+   }
+   if (end===null) {
+     end = (step>0) ? v.length : -1;
+   } else {
+     if (end<0) end += v.length;
+   }
+   if (start < 0) start = 0;
+   let k=0;
+   if (step > 0) {
+     if (end > v.length) end = v.length;
+     for (let i=start; i < end; i+= step) {
+       if (k < a.length) {
+         v.splice(i, 1, a[k]);
+         ++k;
+       } else {
+         v.length = i;
+         break;
+       }
+     }
+   } else {
+     if (start >= v.length)
+       start = v.length-1;
+     if (end < -1)
+       end = -1;
+     for (let i=start; i > end; i+= step) {
+       if (k < a.length) {
+         v.splice(i, 1, a[k]);
+         ++k;
+       } else {
+         v.length = i;
+         break;
+       }
+     }
+   }
+   if (k != a.length) {
+     const e = Error('attempt to assign sequence of size '+a.length+' to extended slice of size ' + k);
+     e.name='ValueError';
+     throw e;
+   }
+}"""
 
 
 ## ----- Methods

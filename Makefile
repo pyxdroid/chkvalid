@@ -16,7 +16,7 @@
 PREPFLAGS=-DCHKPERF=1
 
 #
-# flags for the pyxc program
+# flags for the pyxc program (for pscript(.dev))
 # -v for verbose
 # -q for run with qjs (QuickJS)
 # -j for run with node(js)
@@ -59,6 +59,7 @@ help:
 	@echo "  pso: original version of pscript (https://github.com/flexxui/pscript)"
 	@echo "  tc:  Transcrypt (https://github.com/QQuick/Transcrypt)"
 	@echo "  p3:  standard python3"
+	@echo "some:  help p3 ps"
 	@echo "======================================================================="
 	@echo ""
 
@@ -89,7 +90,7 @@ pso: build/pso/chkvalid.py
 	./pyxc $(PYXCFLAGS) -S$(PSCRIPT_PSO) -D$(dir $<) $(notdir $<)
 
 p3: build/p3/chkvalid.py
-	@echo "=== referenz python ==="
+	@echo "=== reference python ==="
 	(cd $(dir $<) && $(PY3) $(notdir $<))
 
 tc: build/tc/chkvalid.py

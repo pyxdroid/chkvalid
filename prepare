@@ -18,6 +18,7 @@ DEFAULTS = dict(
     USE_HAS___NAME__=True,  # has __name__ set
     # e.g. a[2:4] = [22,33], used in fannkuch benchmark
     USE_LEFT_HAND_SLICE=True,
+    USE_SLICE_STEP=True,  # slicing with step
     USE_PYSTONE=True,  # can use the pystone benchmark
     USE_RICHARDS=True,  # can use richards benchmark
 )
@@ -44,6 +45,7 @@ CONFIGS = {
         USE_EXCEPT_DEFAULT=False,
         USE_HAS___NAME__=False,
         USE_LEFT_HAND_SLICE=False,
+        USE_SLICE_STEP=False,
         USE_RICHARDS=False,
     ),
 

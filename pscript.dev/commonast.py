@@ -5,6 +5,7 @@ generate this common AST by using the builtin ast module and converting
 the result. Supports CPython 2.7, CPython 3.2+, Pypy.
 
 https://github.com/almarklein/commonast
+Few modifications by pyxdroid
 """
 
 from __future__ import print_function, absolute_import
@@ -12,7 +13,14 @@ from __future__ import print_function, absolute_import
 import sys
 import ast
 import json
-from base64 import encodestring as encodebytes, decodestring as decodebytes
+import base64
+
+if hasattr(base64, "encodebytes"):
+    encodebytes = base64.encodebytes
+    decodebytes = base64.decodebytes
+else:
+    encodebytes = base64.encodestring
+    decodebytes = base64.decodestring
 
 pyversion = sys.version_info
 NoneType = None.__class__
@@ -801,6 +809,7 @@ class NativeAstConverter:
 
         # Get converter function
         type = n.__class__.__name__
+        #print('_convert:', type, getattr(n, 'lineno', 1))
         try:
             converter = getattr(self, '_convert_' + type)
         except AttributeError:  # pragma: no cover
@@ -923,16 +932,14 @@ class NativeAstConverter:
         c = self._convert
         if isinstance(n, (ast.Slice, ast.Index, ast.ExtSlice, ast.Ellipsis)):
             return c(n)  # Python < 3.8 (and also 3.8 on Windows?)
-        elif isinstance(n, ast.Num):
-            return Index(c(n))
-        else:
-            assert isinstance(n, ast.Tuple)
+        elif isinstance(n, ast.Tuple):
             dims = [self._convert_index_like(x) for x in n.elts]
-            return ExtSlice(dims)
+            return Tuple(dims)
+        else:  # Num, Unary, Name, or ...
+            return c(n)
 
     def _convert_Index(self, n):
-        return Index(self._convert(n.value))
-
+        return self._convert(n.value)
     def _convert_Slice(self, n):
         c = self._convert
         step = c(n.step)
@@ -942,7 +949,7 @@ class NativeAstConverter:
         return Slice(c(n.lower), c(n.upper), step)
 
     def _convert_ExtSlice(self, n):
-        return ExtSlice([self._convert_index_like(x) for x in n.dims])
+        return Tuple([self._convert_index_like(x) for x in n.dims])
 
     ## Expressions
 
@@ -1029,6 +1036,12 @@ class NativeAstConverter:
     def _convert_AugAssign(self, n):
         op = n.op.__class__.__name__
         return AugAssign(self._convert(n.target), op, self._convert(n.value))
+
+    def _convert_AnnAssign(self, n):
+        if n.value is None:
+            raise RuntimeError("Cannot convert AnnAssign nodes with no assignment!")
+        c = self._convert
+        return Assign([c(n.target)], c(n.value))
 
     def _convert_Print(self, n):  # pragma: no cover - Python 2.x compat
         c = self._convert

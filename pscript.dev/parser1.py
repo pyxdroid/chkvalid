@@ -183,6 +183,7 @@ modules.
 PScript does provide functionality to package code in JS modules,
 but these follow the ``require`` pattern.
 
+Modifications by pyxdroid
 """
 
 import re
@@ -945,13 +946,22 @@ class Parser1(Parser0):
     class MantleSubscript(MantleCode):
         def assign(self, *args):
             code = []
-            code.append(self.parser._use_std_function('op_subscript_assign')+'(')
-            code += self.value_list
-            code += ','
-            code += self.slice_list
-            #print('slice_list:', self.slice_list)
-            if self.slice_list.upper is None:
-               code += ',null'
+            if self.slice_list.step:
+              code.append(self.parser._use_std_function('op_subscript_step_assign')+'(')
+              code += self.value_list
+              code += ','
+              code += self.slice_list
+              #print('MantleSubscript,slice_list:', self.slice_list)
+              #if self.slice_list.upper is None:
+              #   code += ',null'
+            else:
+              code.append(self.parser._use_std_function('op_subscript_assign')+'(')
+              code += self.value_list
+              code += ','
+              code += self.slice_list
+              #print('MantleSubscript,slice_list:', self.slice_list)
+              if self.slice_list.upper is None:
+                 code += ',null'
             code += ','
             code.append(','.join(args))
             code.append(')')
@@ -964,21 +974,27 @@ class Parser1(Parser0):
         slice_list = self.parse(node.slice_node)
 
         code = []
-        if isinstance(node.slice_node, ast.Index):
+        if isinstance(node.slice_node, ast.Slice):
+            if node.ctx == 'store':
+               return self.MantleSubscript(self, node, value_list=value_list, slice_list=slice_list)
+            else:
+               if slice_list.step:
+                 code.append(self._use_std_function('op_step_slice')+'(')
+                 code += value_list
+                 code.append(',')
+                 code += slice_list
+               else:
+                 code += value_list
+                 code.append('.slice(')
+                 code += slice_list
+               code.append(')')
+        else:
             code += value_list
             code.append('[')
             if slice_list[0].startswith('-'):
                 code.append(unify(value_list) + '.length ')
             code += slice_list
             code.append(']')
-        else:  # ast.Slice
-            if node.ctx == 'store':
-               return self.MantleSubscript(self, node, value_list=value_list, slice_list=slice_list)
-            else:
-               code += value_list
-               code.append('.slice(')
-               code += slice_list
-               code.append(')')
         return code
 
     def parse_Index(self, node):
@@ -990,21 +1006,34 @@ class Parser1(Parser0):
           if self.lower:
               code += self.lower
           else:
-              code.append('0')
+              if self.step:
+                code.append('null')
+              else:
+                code.append('0')
+
           if self.upper:
               code.append(',')
               code += self.upper
+
+          if self.step:
+              # raise JSError(self.__class__.__name__+', Slicing with step not supported.')
+              if not self.upper:
+                code.append(',')
+                code += 'null'
+              code.append(',')
+              code += self.step
           return code
 
     def parse_Slice(self, node):
         if self._verbose in 'x':
             print('slice node:', node)
-        if node.step_node:
-            #print('node:', node)
-            raise JSError('Slicing with step not supported.')
+        #if node.step_node:
+        #    #print('node:', node)
+        #    raise JSError('Slicing with step not supported.')
         lower = self.parse(node.lower_node) if node.lower_node else None
         upper = self.parse(node.upper_node) if node.upper_node else None
-        return self.MantleSlice(self, node, lower=lower, upper=upper)
+        step = self.parse(node.step_node) if node.step_node else None
+        return self.MantleSlice(self, node, lower=lower, upper=upper, step=step)
 
     def parse_ExtSlice(self, node):
         raise JSError('Multidimensional slicing not supported in JS')

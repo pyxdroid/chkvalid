@@ -10,6 +10,12 @@ def parse_module(parser, imports, fullname, modname):
   p = Parser(pycode, fullname, inline_stdlib = False, importmodule = modname, verbose=parser._verbose)
   jscode = p.dump()
   #print (fullname+':\n'+jscode+'\n'+str(p.exports))
+
+  for m in p._imported_modules:
+    if m not in parser._imported_modules:
+      #print('insert module:', modname, m)
+      parser._imported_modules.append(m)
+
   imports[modname] = jscode
   parser.use_imported_object(modname, True)
   for name in p.exports:
@@ -19,9 +25,6 @@ def parse_module(parser, imports, fullname, modname):
   parser._std_methods |= p._std_methods
   parser._std_classes |= p._std_classes
   parser._imported_objects |= p._imported_objects
-  for m in p._imported_modules:
-    if m not in parser._imported_modules:
-      parser._imported_modules.insert(0, m)
 
 def prepare(parser, imports, root, name):
   #print('importer,root:', root, 'name:', name, IMPORT_PATHES)

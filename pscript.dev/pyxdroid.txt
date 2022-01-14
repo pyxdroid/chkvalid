@@ -28,21 +28,18 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 all enhancements from pyxdroid may be used under the same License or the MIT License.
 
-# Copyright (c) 2020-present, pyxdroid MIT License
+Copyright (c) 2020-present, pyxdroid MIT License
 
-  Some of enhancements by pyxdroid, may be continued.
+Some of enhancements by pyxdroid, may be continued.
 
 - simple yield generators (no 'yield from' yet)
-
 - @staticmethod, @classmethod handling
-
 - some basic decorator handling (decorators without params)
-
 - ``set`` class base support
-
 - simple static import handling (module code will be included)
-
 - few more builtins
-
-- some other changes like some string formatting, len() handling etc.
+- better round (2 params supported) e.g. round(1.33333, 2) == 1.33, round(1.005001, 2) == 1.01
+- some other changes like some more string formatting, len() handling etc.
+- slicing with steps
+- some splices (left side slicing) also with steps
 
